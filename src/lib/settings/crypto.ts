@@ -13,6 +13,18 @@ function resolveKeyPath(): string {
 }
 
 function getOrCreateKey(): Buffer {
+  const envKey = process.env.SETTINGS_ENCRYPTION_KEY;
+  if (envKey) {
+    const buf = Buffer.from(envKey.trim(), "hex");
+    if (buf.length !== 32) {
+      throw new Error("SETTINGS_ENCRYPTION_KEY must be a 64-character hex string (32 bytes).");
+    }
+    return buf;
+  }
+
+  // Local dev fallback only — on a host with an ephemeral filesystem (e.g. Render),
+  // a file-based key gets regenerated on every restart and silently breaks every
+  // previously-encrypted setting. Always set SETTINGS_ENCRYPTION_KEY in production.
   const keyPath = resolveKeyPath();
   const dir = path.dirname(keyPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
