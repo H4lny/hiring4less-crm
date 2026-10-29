@@ -1,0 +1,254 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/app.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ---------- Auth ----------
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String // "ADMIN" | "RECRUITER" | "SALES" | "MANAGER"
+  countryScope String? // "PHILIPPINES" | "DOMINICAN_REPUBLIC" | "SOUTH_AFRICA" | null (null = all countries)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  candidates        Candidate[]          @relation("RecruiterCandidates")
+  sessions          Session[]
+  emailsSent        EmailLog[]
+  sheetSyncsRun     SheetSyncLog[]
+  matchesDismissed  Match[]              @relation("DismissedBy")
+  shareLinksCreated CandidateShareLink[]
+  jobsCreated       Job[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  userAgent String?
+  ipAddress String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------- Candidate ID sequencing ----------
+model CandidateSequence {
+  country    String @id
+  lastNumber Int    @default(0)
+}
+
+// ---------- Candidate ----------
+model Candidate {
+  id          String @id @default(cuid())
+  candidateId String @unique
+  fullName    String
+  country     String
+  recruiterId String
+
+  jobTitle         String
+  industry         String
+  skills           Json
+  software         Json
+  yearsExperience  Float
+  englishLevel     String
+  hourlyRate       Float
+  availability     String
+  availabilityNote String?
+
+  resumePath     String?
+  resumeFileName String?
+
+  videoRawPath     String?
+  videoBrandedPath String?
+  videoStatus      String @default("NONE")
+
+  notes     String?
+  status    String   @default("NEW")
+  dateAdded DateTime @default(now())
+
+  embedding          Json?
+  embeddingUpdatedAt DateTime?
+
+  sourceSheetCountry String?
+  sourceSheetRowRef  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recruiter  User                 @relation("RecruiterCandidates", fields: [recruiterId], references: [id])
+  matches    Match[]
+  videoJobs  VideoJob[]
+  emailLogs  EmailLog[]
+  shareLinks CandidateShareLink[]
+
+  @@index([country])
+  @@index([status])
+  @@index([recruiterId])
+  @@index([englishLevel])
+  @@index([availability])
+}
+
+// ---------- Job ----------
+model Job {
+  id                 String  @id @default(cuid())
+  company            String
+  jobTitle           String
+  description        String
+  location           String
+  requiredSkills     Json
+  experienceRequired String?
+  minYearsExperience Float?
+  maxYearsExperience Float?
+  industry           String
+  source             String
+  hiringEmail        String
+  website            String?
+  budgetMinRate      Float?
+  budgetMaxRate      Float?
+  status             String  @default("OPEN")
+
+  embedding          Json?
+  embeddingUpdatedAt DateTime?
+
+  createdByUserId   String?
+  sourceSheetRowRef String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy User?      @relation(fields: [createdByUserId], references: [id])
+  matches   Match[]
+  emailLogs EmailLog[]
+
+  @@index([status])
+  @@index([industry])
+}
+
+// ---------- Match ----------
+model Match {
+  id                String    @id @default(cuid())
+  candidateId       String
+  jobId             String
+  score             Float
+  scoreBreakdown    Json
+  explanation       Json
+  status            String    @default("NEW")
+  dismissedByUserId String?
+  dismissedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  candidate   Candidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job         Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  dismissedBy User?      @relation("DismissedBy", fields: [dismissedByUserId], references: [id])
+  emailLogs   EmailLog[]
+
+  @@unique([candidateId, jobId])
+  @@index([score])
+  @@index([status])
+}
+
+// ---------- Email ----------
+model EmailLog {
+  id                String    @id @default(cuid())
+  matchId           String?
+  candidateId       String
+  jobId             String
+  sentByUserId      String
+  toAddress         String
+  subject           String
+  bodyHtml          String
+  resumeAttached    Boolean   @default(false)
+  videoLinkIncluded Boolean   @default(false)
+  status            String    @default("DRAFT")
+  providerMessageId String?
+  errorMessage      String?
+  sentAt            DateTime?
+  createdAt         DateTime  @default(now())
+
+  match     Match?    @relation(fields: [matchId], references: [id])
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+  job       Job       @relation(fields: [jobId], references: [id])
+  sentBy    User      @relation(fields: [sentByUserId], references: [id])
+}
+
+// ---------- Sheet sync ----------
+model SheetSyncLog {
+  id                String    @id @default(cuid())
+  targetType        String
+  country           String?
+  triggeredByUserId String?
+  startedAt         DateTime  @default(now())
+  finishedAt        DateTime?
+  status            String    @default("RUNNING")
+  rowsRead          Int       @default(0)
+  rowsCreated       Int       @default(0)
+  rowsUpdated       Int       @default(0)
+  rowsSkipped       Int       @default(0)
+  errorLog          Json?
+
+  triggeredBy User? @relation(fields: [triggeredByUserId], references: [id])
+}
+
+// ---------- Video ----------
+model VideoJob {
+  id               String    @id @default(cuid())
+  candidateId      String
+  rawVideoPath     String
+  brandedVideoPath String?
+  status           String    @default("QUEUED")
+  attempts         Int       @default(0)
+  ffmpegLog        String?
+  errorMessage     String?
+  startedAt        DateTime?
+  finishedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+}
+
+// ---------- Shareable candidate link ----------
+model CandidateShareLink {
+  id              String   @id @default(cuid())
+  candidateId     String
+  token           String   @unique
+  createdByUserId String
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdByUserId], references: [id])
+}
+
+// ---------- Settings ----------
+model IntegrationSettings {
+  id                          Int      @id @default(1)
+  openaiApiKeyEnc             String?
+  googleServiceAccountJsonEnc String?
+  sheetUrlPhilippines         String?
+  sheetUrlDominicanRepublic   String?
+  sheetUrlSouthAfrica         String?
+  sheetUrlJobs                String?
+  emailMethod                 String   @default("SMTP")
+  smtpHost                    String   @default("smtp.gmail.com")
+  smtpPort                    Int      @default(465)
+  smtpUser                    String?
+  smtpPassEnc                 String?
+  resendApiKeyEnc             String?
+  fromEmail                   String?
+  fromName                    String   @default("Hiring4Less")
+  companyLogoPath             String?
+  brandColorHex               String   @default("#0F172A")
+  matchThreshold              Float    @default(70)
+  syncIntervalMinutes         Int      @default(30)
+  updatedAt                   DateTime @updatedAt
+}
